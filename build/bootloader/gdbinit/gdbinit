@@ -1,0 +1,2 @@
+source R:/appcrap/VSCode/ESP32/esp-now-test/build/bootloader/gdbinit/symbols
+source R:/appcrap/VSCode/ESP32/esp-now-test/build/bootloader/gdbinit/connect
