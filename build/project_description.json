@@ -1,7 +1,7 @@
 {
     "version":            "1.2",
     "project_name":       "esp-now-test",
-    "project_version":    "1",
+    "project_version":    "c91f4e6-dirty",
     "project_path":       "R:/appcrap/VSCode/ESP32/esp-now-test",
     "idf_path":           "R:/appcrap/esp-idf-v5.5.1",
     "build_dir":          "R:/appcrap/VSCode/ESP32/esp-now-test/build",
@@ -1075,7 +1075,7 @@
             "managed_reqs": [],
             "managed_priv_reqs": [],
             "file": "R:/appcrap/VSCode/ESP32/esp-now-test/build/esp-idf/espnow_module/libespnow_module.a",
-            "sources": [ "R:/appcrap/VSCode/ESP32/esp-now-test/components/espnow_module/espnow.c" ],
+            "sources": [ "R:/appcrap/VSCode/ESP32/esp-now-test/components/espnow_module/enmod.c", "R:/appcrap/VSCode/ESP32/esp-now-test/components/espnow_module/enmod_inout.c", "R:/appcrap/VSCode/ESP32/esp-now-test/components/espnow_module/enmod_basics.c" ],
             "include_dirs": [ "." ]
         },
         "espressif__led_strip": {

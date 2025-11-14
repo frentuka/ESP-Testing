@@ -19,7 +19,7 @@
 //#include "wifi.h"
 #include "button.h"
 #include "rgb.h"
-#include "espnow.h"
+#include "enmod.h"
 
 #define TAG "MAIN"
 
@@ -30,10 +30,10 @@ enum ColorSet current_color = Red;
 
 void single_press_test()
 {
-    ESP_LOGI(TAG, "test single press");
-    // rgb_toggle();
-
-    espnow_module_send_toggle();
+    ESP_LOGI(TAG, "test single press: %s", enmod_state_to_str(enmod_get_state()));
+    
+    if (enmod_get_state() == ESPNOW_STATE_PAIRED) enmod_send_toggle();
+    else enmod_try_rejoin(5000);
 }
 
 void double_press_test()
@@ -54,14 +54,14 @@ void double_press_test()
     //         break;
     // }
 
-    espnow_module_try_pair(10000);
+    enmod_discovery_pair(5000);
 }
 
 void on_espnow_trigger() {
     rgb_toggle();
 }
 
-void on_espnow_state(espnow_state_t new_state, const uint8_t peer_mac[6]) {
+void on_espnow_state(espnow_state_t new_state) {
     switch (new_state) {
         case ESPNOW_STATE_NOT_PAIRED:
             rgb_set_color((RGBColor){20, 0, 0});
@@ -72,6 +72,8 @@ void on_espnow_state(espnow_state_t new_state, const uint8_t peer_mac[6]) {
         case ESPNOW_STATE_PAIRED:
             rgb_set_color((RGBColor){0, 20, 0});
             break;
+        case ESPNOW_STATE_REJOINING:
+            rgb_set_color((RGBColor){30, 0, 35});
     }
 }
 
@@ -79,24 +81,6 @@ void on_espnow_state(espnow_state_t new_state, const uint8_t peer_mac[6]) {
 void app_main(void)
 {
     printf("Hello world!!! :D\n");
-
-    // if (wifi_init() != 0) {
-    //     ESP_LOGI("MAIN", "wifi init failed");
-    //     return;
-    // }
-    
-    if (rgb_init(GPIO_NUM_48) != 0) {
-        ESP_LOGI(TAG, "rgb_light_init failed");
-        return;
-    }
-
-    // inicializar espnow
-    ESP_LOGI(TAG, "ESP INIT: %s", esp_err_to_name(espnow_module_init(on_espnow_trigger, on_espnow_state)));
-
-    rgb_set(true);
-
-    button_init(*single_press_test, *double_press_test);
-    
 
     /* Print chip information */
     esp_chip_info_t chip_info;
@@ -127,7 +111,34 @@ void app_main(void)
 
     printf("Minimum free heap size: %" PRIu32 " bytes\n", esp_get_minimum_free_heap_size());
 
+
     //
+
+
+    // if (wifi_init() != 0) {
+    //     ESP_LOGI("MAIN", "wifi init failed");
+    //     return;
+    // }
+    
+    if (rgb_init(GPIO_NUM_48) != 0) {
+        ESP_LOGI(TAG, "rgb_light_init failed");
+        return;
+    }
+
+    rgb_set(true);
+    rgb_set_color((RGBColor){10, 0, 0});
+    vTaskDelay(pdMS_TO_TICKS(500));
+    rgb_set_color((RGBColor){0, 10, 0});
+    vTaskDelay(pdMS_TO_TICKS(500));
+    rgb_set_color((RGBColor){0, 0, 10});
+    vTaskDelay(pdMS_TO_TICKS(500));
+
+    // inicializar espnow
+    ESP_LOGI(TAG, "ESP INIT: %s", esp_err_to_name(enmod_init()));
+    enmod_set_status_cb(on_espnow_state);
+    enmod_set_toggle_cb(on_espnow_trigger);
+
+    button_init(*single_press_test, *double_press_test);
 
     for (;;) {
         vTaskDelay(1000 / portTICK_PERIOD_MS);
