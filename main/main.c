@@ -31,9 +31,6 @@ enum ColorSet current_color = Red;
 void single_press_test()
 {
     ESP_LOGI(TAG, "test single press: %s", enmod_state_to_str(enmod_get_state()));
-    
-    if (enmod_get_state() == ESPNOW_STATE_PAIRED) enmod_send_toggle();
-    else enmod_try_rejoin(5000);
 }
 
 void double_press_test()
@@ -54,26 +51,32 @@ void double_press_test()
     //         break;
     // }
 
-    enmod_discovery_pair(5000);
-}
-
-void on_espnow_trigger() {
-    rgb_toggle();
+    enmod_set_state(ESPNOW_STATE_DISCOVERING);
 }
 
 void on_espnow_state(espnow_state_t new_state) {
     switch (new_state) {
-        case ESPNOW_STATE_NOT_PAIRED:
-            rgb_set_color((RGBColor){20, 0, 0});
+        case ESPNOW_STATE_IDLE:
+            rgb_set_color((RGBColor){5, 5, 5});
             break;
-        case ESPNOW_STATE_PAIRING:
+        case ESPNOW_STATE_DISCOVERING:
             rgb_set_color((RGBColor){0, 0, 20});
             break;
-        case ESPNOW_STATE_PAIRED:
+        case ESPNOW_STATE_RECONNECTING:
+            rgb_set_color((RGBColor){10, 20, 0});
+            break;
+        case ESPNOW_STATE_CONNECTED:
             rgb_set_color((RGBColor){0, 20, 0});
             break;
-        case ESPNOW_STATE_REJOINING:
-            rgb_set_color((RGBColor){30, 0, 35});
+        case ESPNOW_STATE_SECURING:
+            rgb_set_color((RGBColor){0, 30, 30});
+            break;
+        case ESPNOW_STATE_LINK_LOST:
+            rgb_set_color((RGBColor){100, 30, 30});
+            break;
+        default:
+            rgb_set_color((RGBColor){1, 2, 1});
+            break;
     }
 }
 
@@ -135,8 +138,7 @@ void app_main(void)
 
     // inicializar espnow
     ESP_LOGI(TAG, "ESP INIT: %s", esp_err_to_name(enmod_init()));
-    enmod_set_status_cb(on_espnow_state);
-    enmod_set_toggle_cb(on_espnow_trigger);
+    enmod_set_state_cb(on_espnow_state);
 
     button_init(*single_press_test, *double_press_test);
 

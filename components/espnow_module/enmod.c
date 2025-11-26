@@ -3,6 +3,7 @@
 #include "enmod.h"
 #include "enmod_basics.h"
 #include "enmod_inout.h"
+#include "enmod_machine.h"
 
 #include "esp_mac.h"
 #include "esp_now.h"
@@ -28,39 +29,6 @@ static bool init = false;
 const bool enmod_is_init(void)
 {
     return init;
-}
-
-/*
-    setters
-*/
-
-void enmod_set_status_cb(espnow_on_state_cb_t cb)
-{
-    enmod_set_state_cb(cb);
-}
-
-void enmod_set_toggle_cb(espnow_on_toggle_cb_t cb)
-{
-    enmod_inout_set_toggle_cb(cb);
-}
-
-/*
-    inout
-*/
-
-void enmod_try_rejoin(uint32_t ms_timeout)
-{
-    enmod_inout_try_rejoin(ms_timeout);
-}
-
-void enmod_discovery_pair(uint32_t ms_timeout)
-{
-    enmod_inout_discovery_pair(ms_timeout);
-}
-
-esp_err_t enmod_send_toggle(void)
-{
-    return enmod_inout_send_toggle();
 }
 
 /*
@@ -112,12 +80,7 @@ esp_err_t enmod_init(void)
     ESP_ERROR_CHECK(wifi_sta_init());
     ESP_ERROR_CHECK(esp_now_init());
 
-    enmod_inout_init();
-
-    // try to connect with existing peer
-    ESP_LOGI(TAG, "Checking for existing peer inside NVS...");
-    vTaskDelay(pdMS_TO_TICKS(500)); // medio segundo de suspenso. quitar
-    enmod_inout_try_rejoin(10000);
+    enmod_machine_init();
 
     init = true;
     return ESP_OK;

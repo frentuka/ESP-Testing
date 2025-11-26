@@ -22,7 +22,8 @@
     "espnow_inout.h": "c",
     "esp_rom_sys.h": "c",
     "task.h": "c",
-    "enmod_inout.h": "c"
+    "enmod_inout.h": "c",
+    "esp_event.h": "c"
   },
   "C_Cpp.default.compileCommands": "${workspaceFolder}/build/compile_commands.json"
 }

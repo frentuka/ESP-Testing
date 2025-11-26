@@ -35,6 +35,5 @@ espnow_state_t enmod_get_state(void);
 bool enmod_get_peer(uint8_t out_mac[6]);
 
 
-void enmod_try_rejoin(uint32_t timeout);
 void enmod_discovery_pair(uint32_t ms_timeout);
 void enmod_ping(void);
