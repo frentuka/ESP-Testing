@@ -15,11 +15,17 @@
 #include "esp_flash.h"
 #include "esp_system.h"
 #include "esp_log.h"
+#include "esp_rom_sys.h"
 
 //#include "wifi.h"
 #include "button.h"
 #include "rgb.h"
 #include "enmod.h"
+
+#include "tinyusb.h"
+#include "tinyusb_default_config.h"
+#include "usb_descriptors.h"
+#include "usbmod.h"
 
 #define TAG "MAIN"
 
@@ -28,30 +34,54 @@ enum ColorSet {
 };
 enum ColorSet current_color = Red;
 
+void send_char(char c)
+{
+    uint8_t const conv_table[128][2] =  { HID_ASCII_TO_KEYCODE };
+    uint8_t uichar = (uint8_t) c;
+    if (uichar >= 128) return;
+
+    uint8_t kc = conv_table[uichar][1];
+    if (kc == 0) return;
+
+    uint8_t mod = conv_table[uichar][0] ? KEYBOARD_MODIFIER_LEFTSHIFT : 0;
+    uint8_t keys[6] = { kc };
+
+    tud_hid_keyboard_report(REPORT_ID_KEYBOARD, mod, keys);
+    vTaskDelay(pdMS_TO_TICKS(20));
+    uint8_t no_keys[6] = { 0 };
+    tud_hid_keyboard_report(REPORT_ID_KEYBOARD, 0, no_keys);
+}
+
 void single_press_test()
 {
-    ESP_LOGI(TAG, "test single press: %s", enmod_state_to_str(enmod_get_state()));
+    ESP_LOGI(TAG, "test single press");
+    char* chars = "Tecleados";
+
+    if (tud_mounted()) {
+        while (*chars) {
+            send_char(*chars);
+            vTaskDelay(pdMS_TO_TICKS(50));
+            chars++;
+        }
+    }
+
+    // // ensure key release
+    // uint8_t no_keys[6] = { 0 };
+    // tud_hid_keyboard_report(REPORT_ID_KEYBOARD, 0, no_keys);
 }
 
 void double_press_test()
 {
     ESP_LOGI(TAG, "test double press");
-    // switch (current_color) {
-    //     case Red:
-    //         rgb_set_color((RGBColor){20, 0, 0});
-    //         current_color = Green;
-    //         break;
-    //     case Green:
-    //         rgb_set_color((RGBColor){0, 20, 0});
-    //         current_color = Blue;
-    //         break;
-    //     case Blue:
-    //         rgb_set_color((RGBColor){0, 0, 20});
-    //         current_color = Red;
-    //         break;
-    // }
 
-    enmod_set_state(ESPNOW_STATE_DISCOVERING);
+    if (tud_mounted()) {
+        uint8_t keycode[6] = { HID_KEY_GUI_LEFT };
+        tud_hid_keyboard_report(REPORT_ID_KEYBOARD, 0, keycode);  // Press
+        vTaskDelay(pdMS_TO_TICKS(100));
+        uint8_t no_keys[6] = { 0 };
+        tud_hid_keyboard_report(REPORT_ID_KEYBOARD, 0, no_keys); // Release
+        ESP_LOGI(TAG, "Sent 'GUI'!");
+    }
 }
 
 void on_espnow_state(espnow_state_t new_state) {
@@ -85,73 +115,18 @@ void app_main(void)
 {
     printf("Hello world!!! :D\n");
 
-    /* Print chip information */
-    esp_chip_info_t chip_info;
-    uint32_t flash_size;
-    esp_chip_info(&chip_info);
-    printf("This is %s chip with %d CPU core(s), %s%s%s%s, ",
-           CONFIG_IDF_TARGET,
-           chip_info.cores,
-           (chip_info.features & CHIP_FEATURE_WIFI_BGN) ? "WiFi/" : "",
-           (chip_info.features & CHIP_FEATURE_BT) ? "BT" : "",
-           (chip_info.features & CHIP_FEATURE_BLE) ? "BLE" : "",
-           (chip_info.features & CHIP_FEATURE_IEEE802154) ? ", 802.15.4 (Zigbee/Thread)" : "");
-
-    //
-
-    unsigned major_rev = chip_info.revision / 100;
-    unsigned minor_rev = chip_info.revision % 100;
-    printf("silicon revision v%d.%d, ", major_rev, minor_rev);
-    if(esp_flash_get_size(NULL, &flash_size) != ESP_OK) {
-        printf("Get flash size failed");
-        return;
-    }
-
-    //
-
-    printf("%" PRIu32 "MB %s flash\n", flash_size / (uint32_t)(1024 * 1024),
-           (chip_info.features & CHIP_FEATURE_EMB_FLASH) ? "embedded" : "external");
-
-    printf("Minimum free heap size: %" PRIu32 " bytes\n", esp_get_minimum_free_heap_size());
-
-
-    //
-
-
-    // if (wifi_init() != 0) {
-    //     ESP_LOGI("MAIN", "wifi init failed");
-    //     return;
-    // }
-    
-    if (rgb_init(GPIO_NUM_48) != 0) {
-        ESP_LOGI(TAG, "rgb_light_init failed");
-        return;
-    }
-
-    rgb_set(true);
-    rgb_set_color((RGBColor){10, 0, 0});
-    vTaskDelay(pdMS_TO_TICKS(500));
-    rgb_set_color((RGBColor){0, 10, 0});
-    vTaskDelay(pdMS_TO_TICKS(500));
-    rgb_set_color((RGBColor){0, 0, 10});
-    vTaskDelay(pdMS_TO_TICKS(500));
-
-    // inicializar espnow
-    ESP_LOGI(TAG, "ESP INIT: %s", esp_err_to_name(enmod_init()));
-    enmod_set_state_cb(on_espnow_state);
-
     button_init(*single_press_test, *double_press_test);
 
-    for (;;) {
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
-    }
-    
-    // unreachable
+    tinyusb_config_t tusb_cfg = TINYUSB_DEFAULT_CONFIG();
+    tusb_cfg.descriptor.device = &desc_device;
+    tusb_cfg.descriptor.full_speed_config = desc_configuration;
+    tusb_cfg.descriptor.string = (const char **)string_desc_arr;
+    tusb_cfg.descriptor.string_count = sizeof(string_desc_arr) / sizeof(string_desc_arr[0]);
 
-    printf("Restarting now.\n");
-    fflush(stdout);
+    ESP_ERROR_CHECK(tinyusb_driver_install(&tusb_cfg));
 
-    vTaskDelay(1000 / portTICK_PERIOD_MS);
+    // Start the background task for TinyUSB
+    xTaskCreate(usb_task, "usb_task", 4096, NULL, 5, NULL);
 
-    esp_restart();
+    ESP_LOGI(TAG, "USB initialized—plug into PC now!");
 }

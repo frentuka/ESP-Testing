@@ -1,15 +1,15 @@
 {
-  "idf.portWin": "COM5",
+  "idf.portWin": "COM3",
   "idf.customExtraVars": {
     "IDF_TARGET": "esp32s3"
   },
   "idf.flashType": "UART",
-  "idf.espIdfPathWin": "r:\\appcrap\\esp-idf-v5.5.1",
+  "idf.espIdfPathWin": "X:\\appcrap\\Espressif\\frameworks\\esp-idf-v5.5.2",
   "idf.pythonInstallPath": "C:\\Users\\srleg\\.espressif\\tools\\idf-python\\3.11.2\\python.exe",
   "idf.openOcdConfigs": [
     "board/esp32s3-builtin.cfg"
   ],
-  "idf.toolsPathWin": "C:\\Users\\srleg\\.espressif",
+  "idf.toolsPathWin": "X:\\appcrap\\Espressif",
   "files.associations": {
     "freertos.h": "c",
     "stdio.h": "c",
@@ -25,5 +25,6 @@
     "enmod_inout.h": "c",
     "esp_event.h": "c"
   },
+  "cmake.configureOnOpen": false,
   "C_Cpp.default.compileCommands": "${workspaceFolder}/build/compile_commands.json"
 }
