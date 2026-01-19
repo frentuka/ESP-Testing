@@ -25,16 +25,38 @@ static tusb_desc_device_t const desc_device = {
 // ------------ HID Report Descriptor ------------
 // Defines the keyboard report format (standard boot keyboard)
 #define REPORT_ID_KEYBOARD 1
+#define REPORT_ID_NKRO 2
 
+#define NKRO_KEYS 65
+#define NKRO_BYTES ((NKRO_KEYS + 7) / 8)
+
+// Boot keyboard (6KRO) + NKRO bitmap
 static uint8_t const desc_hid_report[] = {
-    TUD_HID_REPORT_DESC_KEYBOARD(HID_REPORT_ID(REPORT_ID_KEYBOARD))
+    // 6KRO boot keyboard
+    TUD_HID_REPORT_DESC_KEYBOARD(HID_REPORT_ID(REPORT_ID_KEYBOARD)),
+
+    // NKRO bitmap
+    0x05, 0x01,                         // Usage Page (Generic Desktop)
+    0x09, 0x06,                         // Usage (Keyboard)
+    0xA1, 0x01,                         // Collection (Application)
+    0x85, REPORT_ID_NKRO,               // Report ID
+    0x05, 0x07,                         // Usage Page (Keyboard/Keypad)
+    0x19, 0x00,                         // Usage Minimum (0)
+    0x29, (NKRO_KEYS - 1),              // Usage Maximum
+    0x15, 0x00,                         // Logical Minimum (0)
+    0x25, 0x01,                         // Logical Maximum (1)
+    0x75, 0x01,                         // Report Size (1)
+    0x95, NKRO_KEYS,                    // Report Count
+    0x81, 0x02,                         // Input (Data,Var,Abs)
+                                        // padding to byte boundary
+    0x75, 0x01,                         // Report Size (1)
+    0x95, (NKRO_BYTES*8 - NKRO_KEYS),   // Report Count (padding)
+    0x81, 0x03,                         // Input (Const,Var,Abs)
+    0xC0                                // End Collection
 };
 
 // Callback: PC asks for HID report descriptor
-uint8_t const * tud_hid_descriptor_report_cb(uint8_t instance) {
-    (void) instance;
-    return desc_hid_report;
-}
+uint8_t const * tud_hid_descriptor_report_cb(uint8_t instance);
 
 // ------------ Configuration Descriptor ------------
 // Combines config + HID interface + endpoint

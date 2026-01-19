@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include "tinyusb.h"
 
 // TinyUSB HID callbacks are required when HID is enabled in the descriptor/config.
@@ -19,3 +20,14 @@ void tud_hid_set_report_cb(uint8_t instance,
                            uint16_t bufsize);
 
 void usb_task(void *arg);
+
+// test stuff
+void usb_send_char(char c);
+void usb_send_keystroke(uint8_t hid_keycode);
+
+// real stuff
+bool usb_keyboard_use_boot_protocol(void);
+void usb_send_keyboard_6kro(uint8_t modifier, const uint8_t keycodes[6]);
+void usb_send_keyboard_nkro(const uint8_t *bitmap, uint16_t len);
+
+void usb_init();

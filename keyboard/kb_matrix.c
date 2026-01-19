@@ -6,87 +6,92 @@
 //          (ROW uses internal pull-up; COL is driven HIGH/LOW)
 
 #include <stdio.h>
+#include <string.h>
 
+#include "driver/gpio.h"
 #include "kb_matrix.h"
 
-//#include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "driver/gpio.h"
-#include "esp_rom_sys.h"   // esp_rom_delay_us
+#include "esp_rom_sys.h"
 
-// Change these GPIOs to whatever you wired.
-#define BTN_GPIO   GPIO_NUM_4   // Step 1 button input (to GND)
-#define COL_GPIO   GPIO_NUM_5   // Step 2 column output
-#define ROW_GPIO   GPIO_NUM_6   // Step 2 row input (pull-up)
+typedef struct {
+	uint8_t index;
+	gpio_num_t gpio;
+} kb_gpio_t;
 
-// ---------- Step 1: single button test (input + internal pull-up) ----------
-static void step1_init_button(void) {
-    gpio_config_t io = {
-        .pin_bit_mask = 1ULL << BTN_GPIO,
-        .mode = GPIO_MODE_INPUT,
-        .pull_up_en = GPIO_PULLUP_ENABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE,
-    };
-    gpio_config(&io);
+static const kb_gpio_t k_rows[] = {
+	GPIO_ROWS
+};
+
+static const kb_gpio_t k_cols[] = {
+	GPIO_COLS
+};
+
+static uint64_t kb_build_pin_mask(const kb_gpio_t *pins, size_t count) {
+	uint64_t mask = 0;
+	for (size_t i = 0; i < count; ++i) {
+		mask |= (1ULL << pins[i].gpio);
+	}
+	return mask;
 }
 
-static void step1_run_button_demo(void) {
-    int last = -1;
-    while (1) {
-        int level = gpio_get_level(BTN_GPIO); // 1 = released, 0 = pressed (to GND)
-        if (level != last) {
-            printf("[STEP 1] BTN=%d (%s)\n", level, level ? "released" : "pressed");
-            last = level;
-        }
-        vTaskDelay(pdMS_TO_TICKS(10));
-    }
+/*
+    scanning
+*/
+static inline void kb_set_bit(uint8_t *bitmap, size_t bit_index) {
+	bitmap[bit_index >> 3] |= (uint8_t)(1U << (bit_index & 7U));
 }
 
-// ---------- Step 2: 1x1 matrix test (drive COL, read ROW w/ pull-up) ----------
-static void step2_init_1x1_matrix(void) {
-    // Column output
-    gpio_config_t col = {
-        .pin_bit_mask = 1ULL << COL_GPIO,
-        .mode = GPIO_MODE_OUTPUT,
-        .pull_up_en = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE,
-    };
-    gpio_config(&col);
-    gpio_set_level(COL_GPIO, 1); // idle HIGH
+void scan(uint8_t *out_active_rc_pairs) {
+	const size_t row_count = sizeof(k_rows) / sizeof(k_rows[0]);
+	const size_t col_count = sizeof(k_cols) / sizeof(k_cols[0]);
+	const size_t total_bits = row_count * col_count;
+	const size_t total_bytes = (total_bits + 7U) / 8U;
 
-    // Row input with pull-up
-    gpio_config_t row = {
-        .pin_bit_mask = 1ULL << ROW_GPIO,
-        .mode = GPIO_MODE_INPUT,
-        .pull_up_en = GPIO_PULLUP_ENABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE,
-    };
-    gpio_config(&row);
+	memset(out_active_rc_pairs, 0, total_bytes);
+
+	for (size_t c = 0; c < col_count; ++c) {
+		gpio_set_level(k_cols[c].gpio, 0);
+		esp_rom_delay_us(5);
+
+		for (size_t r = 0; r < row_count; ++r) {
+			int level = gpio_get_level(k_rows[r].gpio);
+			if (level == 0) {
+				size_t bit_index = (k_rows[r].index * col_count) + k_cols[c].index;
+				kb_set_bit(out_active_rc_pairs, bit_index);
+			}
+		}
+
+		gpio_set_level(k_cols[c].gpio, 1);
+	}
 }
 
-static void step2_run_1x1_demo(void) {
-    while (1) {
-        // Case A: COL HIGH -> ROW should read HIGH regardless of switch
-        gpio_set_level(COL_GPIO, 1);
-        esp_rom_delay_us(5);
-        int row_high_col = gpio_get_level(ROW_GPIO);
+/*
+    init
+*/
+void kb_matrix_gpio_init(void) {
+	const size_t row_count = sizeof(k_rows) / sizeof(k_rows[0]);
+	const size_t col_count = sizeof(k_cols) / sizeof(k_cols[0]);
 
-        // Case B: COL LOW -> if switch pressed, ROW should read LOW
-        gpio_set_level(COL_GPIO, 0);
-        esp_rom_delay_us(5);
-        int row_low_col = gpio_get_level(ROW_GPIO);
+	gpio_config_t row_cfg = {
+		.pin_bit_mask = kb_build_pin_mask(k_rows, row_count),
+		.mode = GPIO_MODE_INPUT,
+		.pull_up_en = GPIO_PULLUP_ENABLE,
+		.pull_down_en = GPIO_PULLDOWN_DISABLE,
+		.intr_type = GPIO_INTR_DISABLE,
+	};
+	gpio_config(&row_cfg);
 
-        printf("[STEP 2] COL=1 => ROW=%d | COL=0 => ROW=%d (%s)\n",
-               row_high_col,
-               row_low_col,
-               row_low_col ? "not pressed" : "pressed");
+	gpio_config_t col_cfg = {
+		.pin_bit_mask = kb_build_pin_mask(k_cols, col_count),
+		.mode = GPIO_MODE_OUTPUT,
+		.pull_up_en = GPIO_PULLUP_DISABLE,
+		.pull_down_en = GPIO_PULLDOWN_DISABLE,
+		.intr_type = GPIO_INTR_DISABLE,
+	};
+	gpio_config(&col_cfg);
 
-        // Restore idle
-        gpio_set_level(COL_GPIO, 1);
-
-        vTaskDelay(pdMS_TO_TICKS(100));
-    }
+	for (size_t i = 0; i < col_count; ++i) {
+		gpio_set_level(k_cols[i].gpio, 1);
+	}
 }

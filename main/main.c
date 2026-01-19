@@ -22,10 +22,9 @@
 #include "rgb.h"
 #include "enmod.h"
 
+#include "usbmod.h"
 #include "tinyusb.h"
 #include "tinyusb_default_config.h"
-#include "usb_descriptors.h"
-#include "usbmod.h"
 
 #define TAG "MAIN"
 
@@ -34,24 +33,6 @@ enum ColorSet {
 };
 enum ColorSet current_color = Red;
 
-void send_char(char c)
-{
-    uint8_t const conv_table[128][2] =  { HID_ASCII_TO_KEYCODE };
-    uint8_t uichar = (uint8_t) c;
-    if (uichar >= 128) return;
-
-    uint8_t kc = conv_table[uichar][1];
-    if (kc == 0) return;
-
-    uint8_t mod = conv_table[uichar][0] ? KEYBOARD_MODIFIER_LEFTSHIFT : 0;
-    uint8_t keys[6] = { kc };
-
-    tud_hid_keyboard_report(REPORT_ID_KEYBOARD, mod, keys);
-    vTaskDelay(pdMS_TO_TICKS(20));
-    uint8_t no_keys[6] = { 0 };
-    tud_hid_keyboard_report(REPORT_ID_KEYBOARD, 0, no_keys);
-}
-
 void single_press_test()
 {
     ESP_LOGI(TAG, "test single press");
@@ -59,7 +40,7 @@ void single_press_test()
 
     if (tud_mounted()) {
         while (*chars) {
-            send_char(*chars);
+            usb_send_char(*chars);
             vTaskDelay(pdMS_TO_TICKS(50));
             chars++;
         }
@@ -73,15 +54,7 @@ void single_press_test()
 void double_press_test()
 {
     ESP_LOGI(TAG, "test double press");
-
-    if (tud_mounted()) {
-        uint8_t keycode[6] = { HID_KEY_GUI_LEFT };
-        tud_hid_keyboard_report(REPORT_ID_KEYBOARD, 0, keycode);  // Press
-        vTaskDelay(pdMS_TO_TICKS(100));
-        uint8_t no_keys[6] = { 0 };
-        tud_hid_keyboard_report(REPORT_ID_KEYBOARD, 0, no_keys); // Release
-        ESP_LOGI(TAG, "Sent 'GUI'!");
-    }
+    usb_send_keystroke(HID_KEY_GUI_LEFT);
 }
 
 void on_espnow_state(espnow_state_t new_state) {
@@ -116,14 +89,8 @@ void app_main(void)
     printf("Hello world!!! :D\n");
 
     button_init(*single_press_test, *double_press_test);
-
-    tinyusb_config_t tusb_cfg = TINYUSB_DEFAULT_CONFIG();
-    tusb_cfg.descriptor.device = &desc_device;
-    tusb_cfg.descriptor.full_speed_config = desc_configuration;
-    tusb_cfg.descriptor.string = (const char **)string_desc_arr;
-    tusb_cfg.descriptor.string_count = sizeof(string_desc_arr) / sizeof(string_desc_arr[0]);
-
-    ESP_ERROR_CHECK(tinyusb_driver_install(&tusb_cfg));
+    
+    usb_init();
 
     // Start the background task for TinyUSB
     xTaskCreate(usb_task, "usb_task", 4096, NULL, 5, NULL);
