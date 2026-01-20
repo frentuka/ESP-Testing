@@ -25,16 +25,16 @@
 #define KB_MATRIX_KEYS (KB_MATRIX_ROW_COUNT * KB_MATRIX_COL_COUNT)
 #define KB_MATRIX_BITMAP_BYTES ((KB_MATRIX_KEYS + 7) / 8)
 #define GPIO_COLS \
-{ 0, GPIO_NUM_1 }, \
-{ 1, GPIO_NUM_2 }, \
-{ 2, GPIO_NUM_6 }, \
-{ 3, GPIO_NUM_7 }, \
-{ 4, GPIO_NUM_8 }, \
-{ 5, GPIO_NUM_9 }, \
-{ 6, GPIO_NUM_10 }, \
-{ 7, GPIO_NUM_11 }, \
-{ 8, GPIO_NUM_12 }, \
-{ 9, GPIO_NUM_16 }, \
+{ 0,  GPIO_NUM_1 }, \
+{ 1,  GPIO_NUM_2 }, \
+{ 2,  GPIO_NUM_6 }, \
+{ 3,  GPIO_NUM_7 }, \
+{ 4,  GPIO_NUM_8 }, \
+{ 5,  GPIO_NUM_9 }, \
+{ 6,  GPIO_NUM_10 }, \
+{ 7,  GPIO_NUM_11 }, \
+{ 8,  GPIO_NUM_12 }, \
+{ 9,  GPIO_NUM_16 }, \
 { 10, GPIO_NUM_17 }, \
 { 11, GPIO_NUM_18 }, \
 { 12, GPIO_NUM_21 }

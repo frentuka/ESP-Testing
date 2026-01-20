@@ -27,7 +27,7 @@ void usb_send_keystroke(uint8_t hid_keycode);
 
 // real stuff
 bool usb_keyboard_use_boot_protocol(void);
-void usb_send_keyboard_6kro(uint8_t modifier, const uint8_t keycodes[6]);
-void usb_send_keyboard_nkro(const uint8_t *bitmap, uint16_t len);
+bool usb_send_keyboard_6kro(uint8_t modifier, const uint8_t keycodes[6]);
+bool usb_send_keyboard_nkro(const uint8_t *bitmap, uint16_t len);
 
 void usb_init();

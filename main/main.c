@@ -97,9 +97,6 @@ void app_main(void)
     
     usb_init();
 
-    // Start the background task for TinyUSB
-    xTaskCreatePinnedToCore(usb_task, "usb_task", 4096, NULL, 5, NULL, 0);
-
     ESP_LOGI(TAG, "USB initialized—plug into PC now!");
 
     kb_manager_start();

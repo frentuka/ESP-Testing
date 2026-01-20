@@ -100,14 +100,14 @@ bool usb_keyboard_use_boot_protocol(void)
     return (tud_hid_get_protocol() == HID_PROTOCOL_BOOT);
 }
 
-void usb_send_keyboard_6kro(uint8_t modifier, const uint8_t keycodes[6])
+bool usb_send_keyboard_6kro(uint8_t modifier, const uint8_t keycodes[6])
 {
-    tud_hid_keyboard_report(REPORT_ID_KEYBOARD, modifier, keycodes);
+    return tud_hid_keyboard_report(REPORT_ID_KEYBOARD, modifier, keycodes);
 }
 
-void usb_send_keyboard_nkro(const uint8_t *bitmap, uint16_t len)
+bool usb_send_keyboard_nkro(const uint8_t *bitmap, uint16_t len)
 {
-    tud_hid_report(REPORT_ID_NKRO, bitmap, len);
+    return tud_hid_report(REPORT_ID_NKRO, bitmap, len);
 }
 
 /*
@@ -123,5 +123,7 @@ void usb_init()
     tusb_cfg.descriptor.string_count = sizeof(string_desc_arr) / sizeof(string_desc_arr[0]);
 
     ESP_ERROR_CHECK(tinyusb_driver_install(&tusb_cfg));
+
+    xTaskCreatePinnedToCore(usb_task, "usb_task", 4096, NULL, 5, NULL, 0);
     ESP_LOGI(TAG, "Initialized!");
 }
