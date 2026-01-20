@@ -53,7 +53,7 @@ void scan(uint8_t *out_matrix_bitmap) {
 
 	for (size_t c = 0; c < col_count; ++c) {
 		gpio_set_level(k_cols[c].gpio, 0);
-		esp_rom_delay_us(5);
+		vTaskDelay(1);
 
 		for (size_t r = 0; r < row_count; ++r) {
 			int level = gpio_get_level(k_rows[r].gpio);

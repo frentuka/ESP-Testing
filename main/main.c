@@ -40,6 +40,8 @@ void single_press_test()
     ESP_LOGI(TAG, "test single press");
     char* chars = "Tecleados";
 
+    kb_manager_set_paused(true);
+    vTaskDelay(pdMS_TO_TICKS(50));
     if (tud_mounted()) {
         while (*chars) {
             usb_send_char(*chars);
@@ -47,6 +49,7 @@ void single_press_test()
             chars++;
         }
     }
+    kb_manager_set_paused(false);
 
     // // ensure key release
     // uint8_t no_keys[6] = { 0 };
@@ -95,7 +98,9 @@ void app_main(void)
     usb_init();
 
     // Start the background task for TinyUSB
-    xTaskCreate(usb_task, "usb_task", 4096, NULL, 5, NULL);
+    xTaskCreatePinnedToCore(usb_task, "usb_task", 4096, NULL, 5, NULL, 0);
 
     ESP_LOGI(TAG, "USB initialized—plug into PC now!");
+
+    kb_manager_start();
 }

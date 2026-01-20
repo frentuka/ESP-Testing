@@ -1,4 +1,5 @@
 #include <string.h>
+
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -14,6 +15,9 @@
 
 static uint8_t s_matrix[KB_MATRIX_BITMAP_BYTES];
 static uint8_t s_nkro[NKRO_BYTES];
+
+static volatile bool s_paused = false;
+void kb_manager_set_paused(bool paused) { s_paused = paused; }
 
 static inline void set_bit(uint8_t *bitmap, size_t bit_index)
 {
@@ -66,22 +70,26 @@ static void kb_manager_task(void *arg)
     while (1) {
         scan(s_matrix);
 
-        if (usb_keyboard_use_boot_protocol()) {
-            uint8_t keys[6];
-            bitmap_to_6kro(s_matrix, keys);
-            usb_send_keyboard_6kro(0, keys);
-        } else {
-            matrix_to_nkro(s_matrix, s_nkro);
-            usb_send_keyboard_nkro(s_nkro, NKRO_BYTES);
+        if (tud_mounted() && !s_paused) {
+            if (usb_keyboard_use_boot_protocol()) {
+                uint8_t keys[6];
+                bitmap_to_6kro(s_matrix, keys);
+                usb_send_keyboard_6kro(0, keys);
+            } else {
+                matrix_to_nkro(s_matrix, s_nkro);
+                usb_send_keyboard_nkro(s_nkro, NKRO_BYTES);
+            }
         }
 
-        vTaskDelay(pdMS_TO_TICKS(5));
+        taskYIELD();
     }
 }
 
 void kb_manager_start(void)
 {
-    xTaskCreate(kb_manager_task, "kb_mgr", 4096, NULL, 5, NULL);
+    kb_matrix_gpio_init();
+    vTaskDelay(pdMS_TO_TICKS(500));
+    xTaskCreatePinnedToCore(kb_manager_task, "kb_mgr", 4096, NULL, 5, NULL, 1);
 }
 
 void kb_manager_test_nkro_keypress(uint8_t row, uint8_t col)

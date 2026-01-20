@@ -11,6 +11,8 @@
 #include "tusb.h"
 #include "usb_descriptors.h"
 
+#include "kb_manager.h"
+
 #define TAG "USBModule"
 
 // TinyUSB HID callbacks are required when HID is enabled in the descriptor/config.
@@ -50,6 +52,7 @@ uint8_t const * tud_hid_descriptor_report_cb(uint8_t instance) {
 void usb_task(void *arg) {
     while (1) {
         tud_task();  // Run TinyUSB stack forever
+        taskYIELD();
     }
 }
 

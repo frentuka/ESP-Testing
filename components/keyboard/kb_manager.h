@@ -2,6 +2,8 @@
 
 #include <stdint.h>
 
+void kb_manager_set_paused(bool paused);
+
 void kb_manager_start(void);
 
 // NKRO test helper: send one key mapped from (row,col)
