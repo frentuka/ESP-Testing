@@ -26,6 +26,8 @@
 #include "tinyusb.h"
 #include "tinyusb_default_config.h"
 
+#include "kb_manager.h"
+
 #define TAG "MAIN"
 
 enum ColorSet {
@@ -54,7 +56,7 @@ void single_press_test()
 void double_press_test()
 {
     ESP_LOGI(TAG, "test double press");
-    usb_send_keystroke(HID_KEY_GUI_LEFT);
+    kb_manager_test_nkro_keypress(3, 3);
 }
 
 void on_espnow_state(espnow_state_t new_state) {

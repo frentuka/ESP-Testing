@@ -27,7 +27,7 @@ static tusb_desc_device_t const desc_device = {
 #define REPORT_ID_KEYBOARD 1
 #define REPORT_ID_NKRO 2
 
-#define NKRO_KEYS 65
+#define NKRO_KEYS 0xE7
 #define NKRO_BYTES ((NKRO_KEYS + 7) / 8)
 
 // Boot keyboard (6KRO) + NKRO bitmap
