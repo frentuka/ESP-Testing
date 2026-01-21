@@ -1,4 +1,5 @@
 #include <string.h>
+#include <limits.h>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -17,11 +18,11 @@
 #include "class/hid/hid.h"  // HID_KEY_* defines
 
 static const char *TAG = "kb_manager";
-static const uint8_t MIN_POLLING_RATE = 50;
+static const uint32_t MAX_POLLING_RATE = 1200; // def 1000
+static const uint32_t MIN_POLLING_RATE = 50;   // def 50
+#define KB_DEBOUNCE_SCANS 5
 
 static uint8_t s_debounce[KB_MATRIX_KEYS];              // per-key debounce integrator counters
-
-#define KB_DEBOUNCE_SCANS 5
 
 static volatile bool s_paused = false;
 void kb_manager_set_paused(bool paused) { s_paused = paused; }
@@ -107,9 +108,15 @@ static void kb_manager_task(void *arg)
 {
     (void)arg;
 
+    int64_t s_seconds_timer = esp_timer_get_time();  // timestamp of last benchmark tick (microseconds)
+
     uint32_t s_scan_count = 0;                           // scans accumulated for per-second benchmark
-    int64_t s_last_benchmark_us = esp_timer_get_time();  // timestamp of last benchmark tick (microseconds)
-    int64_t s_last_report_sent_us = esp_timer_get_time();// timestamp of last report. used to comply MIN_POLLING_RATE
+    uint32_t s_report_count = 0;
+    int64_t s_last_report_sent_us = s_seconds_timer;// timestamp of last report. used to comply MIN_POLLING_RATE
+    int64_t s_last_scan_us = s_seconds_timer;
+    int64_t s_prev_report_sent_us = -1;
+    int64_t s_min_report_interval_us = LLONG_MAX;
+
     bool s_last_matrix_valid = false;                    // whether s_last_matrix contains valid data
     bool s_last_boot_protocol = false;                   // last USB HID protocol used (boot vs NKRO)
     uint32_t s_idle_yield_counter = 0;                   // counter for periodic idle yield
@@ -120,18 +127,38 @@ static void kb_manager_task(void *arg)
     uint8_t s_last_matrix[KB_MATRIX_BITMAP_BYTES];   // last sent debounced matrix bitmap
 
     while (1) {
+        // benchmark
+        int64_t now_us = esp_timer_get_time();
+        int64_t elapsed_us = now_us - s_seconds_timer;
+
+        // rate limit reports to MAX_POLLING_RATE
+        int64_t min_interval_us = 1000000LL / (int64_t)MAX_POLLING_RATE;
+        if (now_us - s_last_scan_us < min_interval_us) {
+            taskYIELD();
+            continue;
+        }
+
         scan(s_raw_matrix);
         debounce_update(s_raw_matrix, s_matrix);
         s_scan_count++;
+        s_last_scan_us = now_us;
 
-        // benchmark
-        int64_t now_us = esp_timer_get_time();
-        int64_t elapsed_us = now_us - s_last_benchmark_us;
         if (elapsed_us >= 1000000) {
-            uint32_t scans_per_sec = (uint32_t)((s_scan_count * 1000000LL) / elapsed_us);
-            ESP_LOGI(TAG, "matrix scans/sec: %lu", (unsigned long)scans_per_sec);
+            uint32_t scans_per_sec =   (uint32_t)((s_scan_count   * 1000000LL) / elapsed_us);
+            uint32_t reports_per_sec = (uint32_t)((s_report_count * 1000000LL) / elapsed_us);
+            uint32_t closest_reports_per_sec = (s_min_report_interval_us == LLONG_MAX || s_min_report_interval_us <= 0)
+                ? 0
+                : (uint32_t)(1000000LL / s_min_report_interval_us);
+            ESP_LOGI(TAG, "last second stats:");
+            ESP_LOGI(TAG, "matrix scans: %lu, reports: %lu, polling rate: %lu",
+                     (unsigned long)scans_per_sec,
+                     (unsigned long)reports_per_sec,
+                     (unsigned long)closest_reports_per_sec <= 1000 ? closest_reports_per_sec : 1000);
+            
             s_scan_count = 0;
-            s_last_benchmark_us = now_us;
+            s_report_count = 0;
+            s_min_report_interval_us = LLONG_MAX;
+            s_seconds_timer = now_us;
         }
 
         // prevent unnecessary usb reports
@@ -144,20 +171,28 @@ static void kb_manager_task(void *arg)
             || now_us > (s_last_report_sent_us + 1000000LL/MIN_POLLING_RATE)); // ensure min polling rate
 
         // send
-        if (should_send) {
+        if (should_send && tud_hid_ready()) {
             s_last_report_sent_us = now_us;
+            bool result = false;
 
             if (boot_protocol) {
                 uint8_t keys[6];
                 bitmap_to_6kro(s_matrix, keys);
-                usb_send_keyboard_6kro(0, keys);
-
-                //ESP_LOGI(TAG, "sent 6kro report");
+                result = usb_send_keyboard_6kro(0, keys);
             } else {
                 matrix_to_nkro(s_matrix, s_nkro);
-                usb_send_keyboard_nkro(s_nkro, NKRO_BYTES);
+                result = usb_send_keyboard_nkro(s_nkro, NKRO_BYTES);
+            }
 
-                //ESP_LOGI(TAG, "sent nkro report");
+            if (result) {
+                s_report_count++;
+                if (s_prev_report_sent_us >= 0) {
+                    int64_t interval_us = now_us - s_prev_report_sent_us;
+                    if (interval_us > 0 && interval_us < s_min_report_interval_us) {
+                        s_min_report_interval_us = interval_us;
+                    }
+                }
+                s_prev_report_sent_us = s_last_report_sent_us;
             }
 
             memcpy(s_last_matrix, s_matrix, KB_MATRIX_BITMAP_BYTES);
@@ -169,8 +204,6 @@ static void kb_manager_task(void *arg)
         if ((++s_idle_yield_counter & 0x3F) == 0) {
             vTaskDelay(1);
         }
-
-        vTaskDelay(pdMS_TO_TICKS(5));
     }
 }
 

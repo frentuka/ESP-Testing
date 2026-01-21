@@ -66,7 +66,7 @@ uint8_t const * tud_hid_descriptor_report_cb(uint8_t instance);
 
 static uint8_t const desc_configuration[] = {
     TUD_CONFIG_DESCRIPTOR(1, 1, 0, CONFIG_TOTAL_LEN, 0x00, 100),  // Config
-    TUD_HID_DESCRIPTOR(0, 4, false, sizeof(desc_hid_report), EPNUM_HID_IN, 8, 10)  // HID interface (polling 10ms)
+    TUD_HID_DESCRIPTOR(0, 4, false, sizeof(desc_hid_report), EPNUM_HID_IN, 64, 1)  // HID interface (polling 1ms)
 };
 
 // ------------ String Descriptors ------------
