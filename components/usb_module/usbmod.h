@@ -19,6 +19,10 @@ void tud_hid_set_report_cb(uint8_t instance,
                            uint8_t const *buffer,
                            uint16_t bufsize);
 
+// COMM vendor channel helpers
+bool usb_comm_send(const uint8_t *data, uint16_t len);
+uint16_t usb_comm_read(uint8_t *out, uint16_t max_len);
+
 void usb_task(void *arg);
 
 // test stuff

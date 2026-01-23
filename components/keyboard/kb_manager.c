@@ -76,7 +76,8 @@ static void bitmap_to_6kro(const uint8_t *bitmap, uint8_t keycodes[6])
             uint8_t byte = bitmap[bit_index >> 3];
             uint8_t bit = (uint8_t)(1U << (bit_index & 7U));
             if (byte & bit) {
-                uint8_t kc = kb_layout_get_keycode(r, c);
+                uint8_t layer = kb_layout_get_active_layer(bitmap);
+                uint8_t kc = kb_layout_get_keycode(r, c, layer);
                 if (kc != HID_KEY_NONE) {
                     keycodes[out++] = kc;
                 }
@@ -95,7 +96,8 @@ static void matrix_to_nkro(const uint8_t *matrix, uint8_t *nkro)
             uint8_t byte = matrix[bit_index >> 3];
             uint8_t bit = (uint8_t)(1U << (bit_index & 7U));
             if (byte & bit) {
-                uint8_t kc = kb_layout_get_keycode(r, c);
+                uint8_t layer = kb_layout_get_active_layer(matrix);
+                uint8_t kc = kb_layout_get_keycode(r, c, layer);
                 if (kc != HID_KEY_NONE && kc < NKRO_KEYS) {
                     set_bit(nkro, kc);
                 }
@@ -131,29 +133,35 @@ static void kb_manager_task(void *arg)
         int64_t now_us = esp_timer_get_time();
         int64_t elapsed_us = now_us - s_seconds_timer;
 
-        // rate limit reports to MAX_POLLING_RATE
+        // limit scan rate to MAX_POLLING_RATE
         int64_t min_interval_us = 1000000LL / (int64_t)MAX_POLLING_RATE;
         if (now_us - s_last_scan_us < min_interval_us) {
             taskYIELD();
             continue;
         }
 
+        // scanning
         scan(s_raw_matrix);
         debounce_update(s_raw_matrix, s_matrix);
         s_scan_count++;
         s_last_scan_us = now_us;
 
+        // log
         if (elapsed_us >= 1000000) {
             uint32_t scans_per_sec =   (uint32_t)((s_scan_count   * 1000000LL) / elapsed_us);
             uint32_t reports_per_sec = (uint32_t)((s_report_count * 1000000LL) / elapsed_us);
             uint32_t closest_reports_per_sec = (s_min_report_interval_us == LLONG_MAX || s_min_report_interval_us <= 0)
                 ? 0
                 : (uint32_t)(1000000LL / s_min_report_interval_us);
-            ESP_LOGI(TAG, "last second stats:");
-            ESP_LOGI(TAG, "matrix scans: %lu, reports: %lu, polling rate: %lu",
-                     (unsigned long)scans_per_sec,
-                     (unsigned long)reports_per_sec,
-                     (unsigned long)closest_reports_per_sec <= 1000 ? closest_reports_per_sec : 1000);
+            
+            // only log problems
+            if (reports_per_sec < MIN_POLLING_RATE / 2) {
+                ESP_LOGE(TAG, "last second stats:");
+                ESP_LOGE(TAG, "matrix scans: %lu, reports: %lu, polling rate: %lu",
+                        (unsigned long)scans_per_sec,
+                        (unsigned long)reports_per_sec,
+                        (unsigned long)closest_reports_per_sec <= 1000 ? closest_reports_per_sec : 1000);
+            }
             
             s_scan_count = 0;
             s_report_count = 0;
@@ -166,12 +174,12 @@ static void kb_manager_task(void *arg)
         bool matrix_changed = !s_last_matrix_valid ||
             (memcmp(s_matrix, s_last_matrix, KB_MATRIX_BITMAP_BYTES) != 0);
 
-        bool should_send = tud_mounted() && !s_paused &&
-            (matrix_changed || (boot_protocol != s_last_boot_protocol)
+        bool should_send = !s_paused && tud_mounted()
+            && (matrix_changed || (boot_protocol != s_last_boot_protocol)
             || now_us > (s_last_report_sent_us + 1000000LL/MIN_POLLING_RATE)); // ensure min polling rate
 
-        // send
-        if (should_send && tud_hid_ready()) {
+        // send report
+        if (should_send && tud_hid_n_ready(ITF_NUM_HID_KBD)) {
             s_last_report_sent_us = now_us;
             bool result = false;
 
@@ -184,6 +192,7 @@ static void kb_manager_task(void *arg)
                 result = usb_send_keyboard_nkro(s_nkro, NKRO_BYTES);
             }
 
+            // save for logging
             if (result) {
                 s_report_count++;
                 if (s_prev_report_sent_us >= 0) {
@@ -200,8 +209,8 @@ static void kb_manager_task(void *arg)
             s_last_boot_protocol = boot_protocol;
         }
 
-        // take 1 tick break every 64 scans (reduces rate from ~10k to 3.2k)
-        if ((++s_idle_yield_counter & 0x3F) == 0) {
+        // take 1 tick break every 128 scans (prevents idle task starvation)
+        if ((++s_idle_yield_counter & 0x7F) == 0) {
             vTaskDelay(1);
         }
     }
@@ -209,6 +218,7 @@ static void kb_manager_task(void *arg)
 
 void kb_manager_start(void)
 {
+    ESP_LOGI(TAG, "Starting keyboard manager...");
     kb_matrix_gpio_init();
     vTaskDelay(pdMS_TO_TICKS(500));
     xTaskCreatePinnedToCore(kb_manager_task, "kb_mgr", 4096, NULL, 5, NULL, 1);
@@ -216,7 +226,7 @@ void kb_manager_start(void)
 
 void kb_manager_test_nkro_keypress(uint8_t row, uint8_t col)
 {
-    uint8_t kc = kb_layout_get_keycode(row, col);
+    uint8_t kc = kb_layout_get_keycode(row, col, KB_LAYER_BASE);
     if (kc == HID_KEY_NONE || kc >= NKRO_KEYS) {
         return;
     }

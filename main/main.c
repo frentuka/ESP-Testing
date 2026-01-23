@@ -17,16 +17,15 @@
 #include "esp_log.h"
 #include "esp_rom_sys.h"
 
-//#include "wifi.h"
+#include "kb_manager.h"
+
 #include "button.h"
 #include "rgb.h"
-#include "enmod.h"
-
+#include "cfgmod.h"
 #include "usbmod.h"
+
 #include "tinyusb.h"
 #include "tinyusb_default_config.h"
-
-#include "kb_manager.h"
 
 #define TAG "MAIN"
 
@@ -45,7 +44,7 @@ void single_press_test()
     if (tud_mounted()) {
         while (*chars) {
             usb_send_char(*chars);
-            vTaskDelay(pdMS_TO_TICKS(50));
+            vTaskDelay(pdMS_TO_TICKS(5));
             chars++;
         }
     }
@@ -62,42 +61,16 @@ void double_press_test()
     kb_manager_test_nkro_keypress(3, 3);
 }
 
-void on_espnow_state(espnow_state_t new_state) {
-    switch (new_state) {
-        case ESPNOW_STATE_IDLE:
-            rgb_set_color((RGBColor){5, 5, 5});
-            break;
-        case ESPNOW_STATE_DISCOVERING:
-            rgb_set_color((RGBColor){0, 0, 20});
-            break;
-        case ESPNOW_STATE_RECONNECTING:
-            rgb_set_color((RGBColor){10, 20, 0});
-            break;
-        case ESPNOW_STATE_CONNECTED:
-            rgb_set_color((RGBColor){0, 20, 0});
-            break;
-        case ESPNOW_STATE_SECURING:
-            rgb_set_color((RGBColor){0, 30, 30});
-            break;
-        case ESPNOW_STATE_LINK_LOST:
-            rgb_set_color((RGBColor){100, 30, 30});
-            break;
-        default:
-            rgb_set_color((RGBColor){1, 2, 1});
-            break;
-    }
+static void init_procedure(void)
+{
+    button_init(*single_press_test, *double_press_test);
+    usb_init();
+    cfg_init();
+    kb_manager_start();
 }
-
 
 void app_main(void)
 {
     printf("Hello world!!! :D\n");
-
-    button_init(*single_press_test, *double_press_test);
-    
-    usb_init();
-
-    ESP_LOGI(TAG, "USB initialized—plug into PC now!");
-
-    kb_manager_start();
+    init_procedure();
 }

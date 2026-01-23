@@ -14,11 +14,16 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_rom_sys.h"
+#include "esp_log.h"
+#include "esp_err.h"
+#include "soc/gpio_periph.h"
 
 typedef struct {
 	uint8_t index;
 	gpio_num_t gpio;
 } kb_gpio_t;
+
+static const char *TAG = "kb_matrix";
 
 static const kb_gpio_t k_rows[] = {
 	GPIO_ROWS
@@ -34,6 +39,23 @@ static uint64_t kb_build_pin_mask(const kb_gpio_t *pins, size_t count) {
 		mask |= (1ULL << pins[i].gpio);
 	}
 	return mask;
+}
+
+static bool kb_validate_pins(const kb_gpio_t *pins, size_t count, bool output_required) {
+	bool ok = true;
+	for (size_t i = 0; i < count; ++i) {
+		gpio_num_t gpio = pins[i].gpio;
+		if (!GPIO_IS_VALID_GPIO(gpio)) {
+			ESP_LOGE(TAG, "Invalid GPIO: %d", (int)gpio);
+			ok = false;
+			continue;
+		}
+		if (output_required && !GPIO_IS_VALID_OUTPUT_GPIO(gpio)) {
+			ESP_LOGE(TAG, "GPIO not output-capable: %d", (int)gpio);
+			ok = false;
+		}
+	}
+	return ok;
 }
 
 /*
@@ -71,28 +93,58 @@ void scan(uint8_t *out_matrix_bitmap) {
     init
 */
 void kb_matrix_gpio_init(void) {
+	ESP_LOGI(TAG, "Initializing GPIO matrix");
+
 	const size_t row_count = sizeof(k_rows) / sizeof(k_rows[0]);
 	const size_t col_count = sizeof(k_cols) / sizeof(k_cols[0]);
 
-	gpio_config_t row_cfg = {
-		.pin_bit_mask = kb_build_pin_mask(k_rows, row_count),
-		.mode = GPIO_MODE_INPUT,
-		.pull_up_en = GPIO_PULLUP_ENABLE,
-		.pull_down_en = GPIO_PULLDOWN_DISABLE,
-		.intr_type = GPIO_INTR_DISABLE,
-	};
-	gpio_config(&row_cfg);
+	if (!kb_validate_pins(k_rows, row_count, false) ||
+		!kb_validate_pins(k_cols, col_count, true)) {
+		ESP_LOGE(TAG, "GPIO selection invalid; aborting matrix init");
+		return;
+	}
 
-	gpio_config_t col_cfg = {
-		.pin_bit_mask = kb_build_pin_mask(k_cols, col_count),
-		.mode = GPIO_MODE_OUTPUT,
-		.pull_up_en = GPIO_PULLUP_DISABLE,
-		.pull_down_en = GPIO_PULLDOWN_DISABLE,
-		.intr_type = GPIO_INTR_DISABLE,
-	};
-	gpio_config(&col_cfg);
+	ESP_LOGI(TAG, "GPIO pins validated");
+
+	ESP_LOGI(TAG, "Configuring row GPIOs");
+	for (size_t i = 0; i < row_count; ++i) {
+		gpio_config_t row_cfg = {
+			.pin_bit_mask = (1ULL << k_rows[i].gpio),
+			.mode = GPIO_MODE_INPUT,
+			.pull_up_en = GPIO_PULLUP_ENABLE,
+			.pull_down_en = GPIO_PULLDOWN_DISABLE,
+			.intr_type = GPIO_INTR_DISABLE,
+		};
+		ESP_LOGI(TAG, "Configuring row GPIO %d", (int)k_rows[i].gpio);
+		esp_err_t row_err = gpio_config(&row_cfg);
+		if (row_err != ESP_OK) {
+			ESP_LOGE(TAG, "Row GPIO %d config failed: %s", (int)k_rows[i].gpio, esp_err_to_name(row_err));
+			return;
+		}
+	}
+
+	ESP_LOGI(TAG, "Configuring col GPIOs");
+	for (size_t i = 0; i < col_count; ++i) {
+		gpio_config_t col_cfg = {
+			.pin_bit_mask = (1ULL << k_cols[i].gpio),
+			.mode = GPIO_MODE_OUTPUT,
+			.pull_up_en = GPIO_PULLUP_DISABLE,
+			.pull_down_en = GPIO_PULLDOWN_DISABLE,
+			.intr_type = GPIO_INTR_DISABLE,
+		};
+		ESP_LOGI(TAG, "Configuring col GPIO %d", (int)k_cols[i].gpio);
+		esp_err_t col_err = gpio_config(&col_cfg);
+		if (col_err != ESP_OK) {
+			ESP_LOGE(TAG, "Col GPIO %d config failed: %s", (int)k_cols[i].gpio, esp_err_to_name(col_err));
+			return;
+		}
+	}
+
+	ESP_LOGI(TAG, "GPIO pins configured");
 
 	for (size_t i = 0; i < col_count; ++i) {
 		gpio_set_level(k_cols[i].gpio, 1);
 	}
+
+	ESP_LOGI(TAG, "Columns level set to HIGH");
 }
