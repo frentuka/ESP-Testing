@@ -3,36 +3,37 @@
 #include <stdint.h>
 #include "tinyusb.h"
 
-#define ACK_KEY = 0b10101010
-#define NAK_KEY = 0b01010101
-#define OK_KEY  = 0b11110000
-#define ERR_KEY = 0b00001111
+// ======== types ========
 
-typedef struct {
-    uint8_t  cmd;           // Command ID (0x01 = set, 0x02 = get, 0x03 = action)
-    uint16_t total_len;     // Total bytes of the full payload (little-endian)
-    uint8_t  key_id;        // Which config key/slot this data belongs to (0-255)
-    uint8_t  flags;         // Bitfield: (b0=first packet, b1=last packet)
+typedef enum usb_cmd_msg_type: uint8_t {
+	CMD_MSG_REQUEST_SET = 0,
+    CMD_MSG_REQUEST_GET,
+	CMD_MSG_RESPONSE,
+	CMD_MSG_NOTIFY
+} usb_cmd_msg_type_t;
 
-    uint8_t reserved[2];    // one never knows
+typedef enum usb_cmd_msg_kind: uint8_t {
+	CMD_KIND_LAYOUT = 0,
+	CMD_KIND_MACRO,
+    CMD_KIND_CONNECTION,
+	CMD_KIND_SYSTEM
+} usb_cmd_msg_kind_t;
 
-    uint8_t  payload[40];   // Actual data bytes (40 to reach exactly 47 before CRC)
+// ======== messages ========
 
-    // CRC is NOT inside the struct but appended right after
-} __attribute__((packed)) command_payload_t;
+#define FLAG_FIRST 0b10000000
+#define FLAG_LAST  0b00000001
+#define FLAG_ACK   0b01000000
+#define FLAG_ABORT 0b00100000
 
-typedef struct {
-    uint8_t  cmd;           // Command ID (0x01 = set, 0x02 = get, 0x03 = action)
-    uint16_t total_len;     // Total bytes of the full payload (little-endian)
-    uint8_t  key_id;        // Which config key/slot this data belongs to (0-255)
-    uint8_t  flags;         // Bitfield: (b0=first packet, b1=last packet)
-
-    uint8_t reserved[2];    // one never knows
-
-    uint8_t  payload[40];   // Actual data bytes (40 to reach exactly 47 before CRC)
-
-    // CRC is NOT inside the struct but appended right after
-} __attribute__((packed)) command_rsp_payload_t;
+typedef struct cmd_msg {
+	usb_cmd_msg_type_t type;
+	usb_cmd_msg_kind_t kind;
+    uint8_t flags;
+	uint16_t seq;
+	uint16_t payload_len;
+    uint8_t payload[40];
+} cmd_msg_t;
 
 // TinyUSB HID callbacks are required when HID is enabled in the descriptor/config.
 // Provide minimal stubs to satisfy the linker (and optionally extend later).
