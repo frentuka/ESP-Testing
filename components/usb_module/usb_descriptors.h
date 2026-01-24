@@ -21,14 +21,18 @@ static tusb_desc_device_t const desc_device = {
     .bNumConfigurations = 0x01
 };
 
-// ------------ HID Report Descriptor (Keyboard Only) ------------
+// ------------ HID Report Descriptors ------------
 #define REPORT_ID_KEYBOARD 1
 #define REPORT_ID_NKRO 2
+#define REPORT_ID_COMM 3
 
 #define NKRO_KEYS 0xE7
 #define NKRO_BYTES ((NKRO_KEYS + 7) / 8)
-#define NKRO_REPORT_SIZE 64
 
+#define NKRO_REPORT_SIZE 64
+#define COMM_REPORT_SIZE 48
+
+// Keyboard report descriptor (6KRO + NKRO)
 static uint8_t const desc_hid_report_kbd[] = {
     // 6KRO boot keyboard
     TUD_HID_REPORT_DESC_KEYBOARD(HID_REPORT_ID(REPORT_ID_KEYBOARD)),
@@ -52,73 +56,85 @@ static uint8_t const desc_hid_report_kbd[] = {
     0xC0                                // End Collection
 };
 
+// Vendor-defined HID descriptor for bidirectional config data (64 bytes input + output)
+static uint8_t const desc_hid_report_comm[] = {
+    0x06, 0xFF, 0xFF,                  // Usage Page (Vendor Defined)
+    0x09, 0x01,                        // Usage (Vendor Defined)
+    0xA1, 0x01,                        // Collection (Application)
+    0x85, REPORT_ID_COMM,              // Report ID
+    0x09, 0x02,                        // Usage (Vendor Defined) - Input
+    0x15, 0x00,                        // Logical Minimum (0)
+    0x26, 0xFF, 0x00,                  // Logical Maximum (255)
+    0x75, 0x08,                        // Report Size (8)
+    0x95, COMM_REPORT_SIZE,            // Report Count
+    0x81, 0x02,                        // Input (Data,Var,Abs)
+    0x09, 0x03,                        // Usage (Vendor Defined) - Output
+    0x15, 0x00,                        // Logical Minimum (0)
+    0x26, 0xFF, 0x00,                  // Logical Maximum (255)
+    0x75, 0x08,                        // Report Size (8)
+    0x95, COMM_REPORT_SIZE,            // Report Count
+    0x91, 0x02,                        // Output (Data,Var,Abs)
+    0xC0                               // End Collection
+};
+
 uint8_t const * tud_hid_descriptor_report_cb(uint8_t instance);
 
-// ------------ Interface & Endpoint Definitions ------------
-#define ITF_NUM_HID_KBD   0
-#define ITF_NUM_BULK_COMM 1
-#define ITF_NUM_TOTAL     2
+// ------------ Device and Endpoint Configuration -----------
+enum {
+    EPNUM_HID_KBD_IN = 0x81,
+    EPNUM_HID_COMM_IN = 0x82,
+    EPNUM_HID_COMM_OUT = 0x02,
+};
 
-#define EPNUM_HID_KBD_IN  0x81
-#define EPNUM_BULK_OUT    0x02
-#define EPNUM_BULK_IN     0x82
+enum {
+    ITF_NUM_HID_KBD = 0,
+    ITF_NUM_HID_COMM = 1,
+    ITF_NUM_TOTAL = 2
+};
 
-#define BULK_COMM_MAX_SIZE 64
+// Keyboard report: 8 bytes boot + 1 extra + NKRO bytes = ~72 bytes
+#define KBD_REPORT_LEN (8 + 1 + NKRO_BYTES)
 
-// ------------ Configuration Descriptor ------------
-// Use TinyUSB macros for keyboard HID interface (proper format)
-// Manual descriptor for bulk interface to avoid HID limitations
+// Configuration descriptor component sizes
+#define CONFIG_DESC_SIZE        9       // TUD_CONFIG_DESCRIPTOR
+#define HID_KBD_DESC_SIZE       25      // TUD_HID_DESCRIPTOR (Interface 9 + HID 9 + Endpoint 7)
+#define HID_COMM_DESC_SIZE      32      // TUD_HID_INOUT_DESCRIPTOR (Interface 9 + HID 9 + Endpoint Out 7 + Endpoint In 7)
 
-#define CONFIG_TOTAL_LEN (TUD_CONFIG_DESC_LEN + TUD_HID_DESC_LEN + 9 + 7 + 7)
+// Total configuration descriptor length
+#define CONFIG_TOTAL_LEN        (CONFIG_DESC_SIZE + HID_KBD_DESC_SIZE + HID_COMM_DESC_SIZE)
 
 static uint8_t const desc_configuration[] = {
     TUD_CONFIG_DESCRIPTOR(
         1,                              // bConfigurationValue
-        ITF_NUM_TOTAL,                  // bNumInterfaces (2)
-        0,                              // iConfiguration
+        ITF_NUM_TOTAL,                  // bNumInterfaces
+        0,                              // iConfiguration (no string)
         CONFIG_TOTAL_LEN,               // wTotalLength
-        0x80,                           // bmAttributes (bus powered)
-        100                             // bMaxPower (200 mA)
+        TUSB_DESC_CONFIG_ATT_SELF_POWERED, // bmAttributes
+        500                             // bMaxPower (in 2mA units = 1000mA)
     ),
 
-    // Interface 0: HID Keyboard (using TinyUSB macro)
+    // Interface 0: HID Keyboard
     TUD_HID_DESCRIPTOR(
         ITF_NUM_HID_KBD,                // bInterfaceNumber
-        4,                              // iInterface (string index)
-        true,                           // protocol (boot)
+        0,                              // iInterface (no string)
+        true,                           // protocol (1=Boot interface)
         sizeof(desc_hid_report_kbd),    // wDescriptorLength
         EPNUM_HID_KBD_IN,               // bEndpointAddress
-        NKRO_REPORT_SIZE,               // wMaxPacketSize
-        1                               // bInterval
+        KBD_REPORT_LEN,                 // wMaxPacketSize
+        1                              // bInterval (milliseconds)
     ),
 
-    // Interface 1: Bulk COMM (manual - vendor-specific, not HID)
-    // Interface descriptor (9 bytes)
-    9,                                  // bLength
-    TUSB_DESC_INTERFACE,               // bDescriptorType
-    ITF_NUM_BULK_COMM,                 // bInterfaceNumber
-    0,                                  // bAlternateSetting
-    2,                                  // bNumEndpoints (OUT + IN)
-    TUSB_CLASS_VENDOR_SPECIFIC,        // bInterfaceClass (vendor-specific)
-    0,                                  // bInterfaceSubClass
-    0,                                  // bInterfaceProtocol
-    5,                                  // iInterface (string index)
-
-    // Endpoint OUT (7 bytes)
-    7,                                  // bLength
-    TUSB_DESC_ENDPOINT,                // bDescriptorType
-    EPNUM_BULK_OUT,                    // bEndpointAddress
-    TUSB_XFER_BULK,                    // bmAttributes (bulk)
-    U16_TO_U8S_LE(BULK_COMM_MAX_SIZE), // wMaxPacketSize
-    0,                                  // bInterval
-
-    // Endpoint IN (7 bytes)
-    7,                                  // bLength
-    TUSB_DESC_ENDPOINT,                // bDescriptorType
-    EPNUM_BULK_IN,                     // bEndpointAddress
-    TUSB_XFER_BULK,                    // bmAttributes (bulk)
-    U16_TO_U8S_LE(BULK_COMM_MAX_SIZE), // wMaxPacketSize
-    0                                   // bInterval
+    // Interface 1: HID Comm (bidirectional)
+    TUD_HID_INOUT_DESCRIPTOR(
+        ITF_NUM_HID_COMM,               // bInterfaceNumber
+        0,                              // iInterface (no string)
+        false,                          // protocol (0=no boot interface)
+        sizeof(desc_hid_report_comm),   // wDescriptorLength
+        EPNUM_HID_COMM_OUT,             // bEndpointAddress (OUT)
+        EPNUM_HID_COMM_IN,              // bEndpointAddress (IN)
+        COMM_REPORT_SIZE,               // wMaxPacketSize
+        20                              // bInterval (milliseconds)
+    )
 };
 
 // ------------ String Descriptors ------------

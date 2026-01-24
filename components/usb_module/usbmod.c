@@ -5,6 +5,9 @@
 
 #include "usbmod.h"
 #include "usb_descriptors.h"
+#include "usb_callbacks.h"
+
+#include "cfgmod.h"
 
 #include "esp_log.h"
 #include "esp_err.h"
@@ -13,44 +16,9 @@
 #include "tinyusb_default_config.h"
 #include "tusb.h"
 
-#include "cfgmod.h"
-
 #define TAG "USBModule"
 
-#define MAX_COMMS_SEND_ATTEMPTS 5
-
-// ============ KEYBOARD HID - Keep unchanged ============
-
-// HID Report callbacks are required for HID interfaces (keyboard)
-uint16_t tud_hid_get_report_cb(uint8_t instance,
-                              uint8_t report_id,
-                              hid_report_type_t report_type,
-                              uint8_t *buffer,
-                              uint16_t reqlen)
-{
-    (void) instance;
-    (void) report_type;
-    (void) report_id;
-    (void) buffer;
-    
-    // Keyboard doesn't need to respond to get_report
-    return 0;
-}
-
-void tud_hid_set_report_cb(uint8_t instance,
-                           uint8_t report_id,
-                           hid_report_type_t report_type,
-                           uint8_t const *buffer,
-                           uint16_t bufsize)
-{
-    (void) instance;
-    (void) report_id;
-    (void) report_type;
-    (void) buffer;
-    (void) bufsize;
-    
-    // Keyboard doesn't process incoming data
-}
+// ============ KEYBOARD HID FUNCTIONS ============
 
 bool usb_keyboard_use_boot_protocol(void)
 {
@@ -66,6 +34,8 @@ bool usb_send_keyboard_nkro(const uint8_t *bitmap, uint16_t len)
 {
     return tud_hid_n_report(ITF_NUM_HID_KBD, REPORT_ID_NKRO, bitmap, len);
 }
+
+// Test functions
 
 void usb_send_char(char c)
 {
@@ -97,73 +67,10 @@ void usb_send_keystroke(uint8_t hid_keycode)
     }
 }
 
-// ============ BULK COMM - New Implementation ============
 
-// Buffers for bulk endpoint data
-static uint8_t bulk_rx_buf[BULK_COMM_MAX_SIZE];
-static uint16_t bulk_rx_len = 0;
-static uint8_t bulk_tx_buf[BULK_COMM_MAX_SIZE];
-
-// Called whenever there's data available on the bulk OUT endpoint (host -> device)
-void tud_vendor_rx_cb(uint8_t itf, uint8_t const *buffer, uint16_t bufsize)
-{
-    if (itf != ITF_NUM_BULK_COMM || buffer == NULL || bufsize == 0) {
-        return;
-    }
-
-    // Copy received data to buffer
-    uint16_t copy_len = (bufsize < sizeof(bulk_rx_buf)) ? bufsize : sizeof(bulk_rx_buf);
-    memcpy(bulk_rx_buf, buffer, copy_len);
-    bulk_rx_len = copy_len;
-
-    ESP_LOGI(TAG, "Bulk RX: %d bytes", bulk_rx_len);
-
-    // Process the command and prepare response
-    uint8_t resp[BULK_COMM_MAX_SIZE] = {0};
-    size_t resp_len = 0;
-
-    esp_err_t handle_result = cfgmod_handle_usb_comm(bulk_rx_buf, bulk_rx_len, resp, &resp_len, sizeof(resp));
-    if (handle_result != ESP_OK || resp_len == 0) {
-        ESP_LOGE(TAG, "cfgmod_handle_usb_comm() error: %s, resp_len: %d", 
-                 esp_err_to_name(handle_result), resp_len);
-        return;
-    }
-
-    // Send response
-    if (!usb_comm_send(resp, resp_len)) {
-        ESP_LOGE(TAG, "Failed to send response");
-    }
-}
-
-// Send data via bulk IN endpoint (device -> host)
-bool usb_comm_send(const uint8_t *data, uint16_t len)
-{
-    if (len > BULK_COMM_MAX_SIZE) len = BULK_COMM_MAX_SIZE;
-    
-    memcpy(bulk_tx_buf, data, len);
-    
-    // tud_vendor_write blocks until data is sent or endpoint is full
-    uint16_t written = tud_vendor_write(bulk_tx_buf, len);
-    
-    ESP_LOGI(TAG, "Bulk TX: %d/%d bytes written", written, len);
-    return (written == len);
-}
-
-// Read data from bulk endpoint (typically called from cfgmod or main app)
-uint16_t usb_comm_read(uint8_t *out, uint16_t max_len)
-{
-    uint16_t n = bulk_rx_len;
-    if (n > max_len) n = max_len;
-    memcpy(out, bulk_rx_buf, n);
-    bulk_rx_len = 0;  // Clear after read
-    return n;
-}
-
-// HID report descriptor callback for keyboard
-uint8_t const * tud_hid_descriptor_report_cb(uint8_t instance) {
-    // Only keyboard HID uses this now
-    return desc_hid_report_kbd;
-}
+/*
+    Main USB module
+*/
 
 // TinyUSB task
 void usb_task(void *arg) {
@@ -182,7 +89,42 @@ void usb_init()
     tusb_cfg.descriptor.string_count = sizeof(string_desc_arr) / sizeof(string_desc_arr[0]);
 
     ESP_ERROR_CHECK(tinyusb_driver_install(&tusb_cfg));
-
+    
     xTaskCreatePinnedToCore(usb_task, "usb_task", 4096, NULL, 5, NULL, 1);
-    ESP_LOGI(TAG, "USB initialized with HID Keyboard + Bulk COMM!");
+    ESP_LOGI(TAG, "USB initialized with bidirectional HID comms!");
+}
+
+/*
+    handle callbacks to usb_callbacks
+    (workaround to tinyusb not wanting to link with usb_callbacks)
+*/
+
+uint16_t tud_hid_get_report_cb(uint8_t instance,
+                              uint8_t report_id,
+                              hid_report_type_t report_type,
+                              uint8_t *buffer,
+                              uint16_t reqlen)
+{
+    return usbmod_tud_hid_get_report_cb(
+        instance,
+        report_id,
+        report_type,
+        buffer,
+        reqlen
+    );
+}
+
+void tud_hid_set_report_cb(uint8_t instance,
+                           uint8_t report_id,
+                           hid_report_type_t report_type,
+                           uint8_t const *buffer,
+                           uint16_t bufsize)
+{
+    usbmod_tud_hid_set_report_cb(
+        instance,
+        report_id,
+        report_type,
+        buffer,
+        bufsize
+    );
 }

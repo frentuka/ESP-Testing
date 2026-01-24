@@ -146,13 +146,22 @@ static void kb_manager_task(void *arg)
         s_scan_count++;
         s_last_scan_us = now_us;
 
-        // log
+        // log periodically
         if (elapsed_us >= 1000000) {
             uint32_t scans_per_sec =   (uint32_t)((s_scan_count   * 1000000LL) / elapsed_us);
             uint32_t reports_per_sec = (uint32_t)((s_report_count * 1000000LL) / elapsed_us);
             uint32_t closest_reports_per_sec = (s_min_report_interval_us == LLONG_MAX || s_min_report_interval_us <= 0)
                 ? 0
                 : (uint32_t)(1000000LL / s_min_report_interval_us);
+
+            // log boot protocol changes
+            if (s_last_boot_protocol != usb_keyboard_use_boot_protocol()) {
+                if (!s_last_boot_protocol) {
+                    ESP_LOGI(TAG, "BOOT PROTOCOL: now 6kro");
+                } else {
+                    ESP_LOGI(TAG, "BOOT PROTOCOL: now nkro");
+                }
+            }
             
             // only log problems
             if (reports_per_sec < MIN_POLLING_RATE / 2) {
@@ -174,12 +183,12 @@ static void kb_manager_task(void *arg)
         bool matrix_changed = !s_last_matrix_valid ||
             (memcmp(s_matrix, s_last_matrix, KB_MATRIX_BITMAP_BYTES) != 0);
 
-        bool should_send = !s_paused && tud_mounted()
+        bool should_send = !s_paused && tud_mounted() && tud_hid_n_ready(ITF_NUM_HID_KBD)
             && (matrix_changed || (boot_protocol != s_last_boot_protocol)
             || now_us > (s_last_report_sent_us + 1000000LL/MIN_POLLING_RATE)); // ensure min polling rate
 
         // send report
-        if (should_send && tud_hid_n_ready(ITF_NUM_HID_KBD)) {
+        if (should_send) {
             s_last_report_sent_us = now_us;
             bool result = false;
 
