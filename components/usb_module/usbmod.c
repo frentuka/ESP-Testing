@@ -37,6 +37,12 @@ bool usb_send_keyboard_nkro(const uint8_t *bitmap, uint16_t len)
 
 // Test functions
 
+static void block_until_kb_ready() {
+    while (!tud_hid_n_ready(ITF_NUM_HID_KBD)) {
+        continue;
+    }
+}
+
 void usb_send_char(char c)
 {
     uint8_t const conv_table[128][2] = { HID_ASCII_TO_KEYCODE };
@@ -49,10 +55,12 @@ void usb_send_char(char c)
     uint8_t mod = conv_table[uichar][0] ? KEYBOARD_MODIFIER_LEFTSHIFT : 0;
     uint8_t keys[6] = { kc };
 
-    tud_hid_n_keyboard_report(ITF_NUM_HID_KBD, REPORT_ID_KEYBOARD, mod, keys);
-    vTaskDelay(pdMS_TO_TICKS(20));
-    uint8_t no_keys[6] = { 0 };
-    tud_hid_n_keyboard_report(ITF_NUM_HID_KBD, REPORT_ID_KEYBOARD, 0, no_keys);
+    if (tud_mounted()) {
+        tud_hid_n_keyboard_report(ITF_NUM_HID_KBD, REPORT_ID_KEYBOARD, mod, keys);
+        block_until_kb_ready();
+        uint8_t no_keys[6] = { 0 };
+        tud_hid_n_keyboard_report(ITF_NUM_HID_KBD, REPORT_ID_KEYBOARD, 0, no_keys);
+    }
 }
 
 void usb_send_keystroke(uint8_t hid_keycode)
@@ -60,7 +68,7 @@ void usb_send_keystroke(uint8_t hid_keycode)
     if (tud_mounted()) {
         uint8_t keycode[6] = { hid_keycode };
         tud_hid_n_keyboard_report(ITF_NUM_HID_KBD, REPORT_ID_KEYBOARD, 0, keycode);  // Press
-        vTaskDelay(pdMS_TO_TICKS(100));
+        block_until_kb_ready();
         uint8_t no_keys[6] = { 0 };
         tud_hid_n_keyboard_report(ITF_NUM_HID_KBD, REPORT_ID_KEYBOARD, 0, no_keys); // Release
         ESP_LOGI(TAG, "Sent keystroke");
@@ -91,7 +99,10 @@ void usb_init()
     ESP_ERROR_CHECK(tinyusb_driver_install(&tusb_cfg));
     
     xTaskCreatePinnedToCore(usb_task, "usb_task", 4096, NULL, 5, NULL, 1);
-    ESP_LOGI(TAG, "USB initialized with bidirectional HID comms!");
+
+    usb_callbacks_init();
+
+    ESP_LOGI(TAG, "USB initialized !");
 }
 
 /*
